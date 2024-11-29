@@ -11,6 +11,7 @@ import lombok.NoArgsConstructor;
 @Entity
 @Getter
 @NoArgsConstructor
+
 public class User {
 
     @Id
@@ -18,11 +19,12 @@ public class User {
     private long id;
     private String email;
     private String password;
+    private String name;
 
     @Builder
-    public User (long id, String email, String password){
-        this.id = id;
+    public User (String email, String password,String name){
         this.email =email;
         this.password = password;
+        this.name = name;
     }
 }
