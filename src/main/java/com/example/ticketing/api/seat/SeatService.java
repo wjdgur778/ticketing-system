@@ -21,7 +21,6 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class SeatService {
     final private SeatRepository seatRepository;
-    final private RedisQueueManager redisQueueManager;
     private final RedisTemplate<String, Object> redisTemplate;
     private static final String SEAT_STATUS_KEY = "seat_status";
     /**
@@ -40,12 +39,12 @@ public class SeatService {
             log.info("redis에 데이터가 없습니다.");
             List<Seat> seats = seatRepository.findByContents_Id(contentsId);
             seats.forEach(seat ->
-                    redisTemplate.opsForHash().put(SEAT_STATUS_KEY+String.valueOf(contentsId), seat.getNumber(), seat.isAvailable())
+                    redisTemplate.opsForHash().put(SEAT_STATUS_KEY+String.valueOf(contentsId), seat.getId(), seat.isAvailable())
             );
             log.info("좌석 수 : " + seats.size() );
 
             return seats.stream()
-                    .map(seat -> new SeatResponse(seat.getNumber(),seat.isAvailable()))
+                    .map(seat -> new SeatResponse(seat.getId(), seat.isAvailable()))
                     .collect(Collectors.toList());
         }
 
@@ -53,7 +52,7 @@ public class SeatService {
         // 3. Redis 데이터를 기반으로 응답
         return seatStatuses.entrySet().stream()
                 .map(entry -> new SeatResponse(
-                        (Long)entry.getKey(),// Number
+                        (Long)entry.getKey(),// seat id
                         (Boolean)entry.getValue()// isAvailable
                 ))
                 .collect(Collectors.toList());
@@ -61,17 +60,17 @@ public class SeatService {
 //    public void reservationSeat(){
 //
 //    }
-//    @Transactional
-//    public void updateSeatStatus(Long seatId, boolean available) {
-//        // 좌석 상태 변경
-//        redisTemplate.opsForHash().put(SEAT_STATUS_KEY, seatId.toString(), available);
-//
-//        // DB도 업데이트
-//        Seat seat = seatRepository.findById(seatId)
-//                .orElseThrow(() -> new RuntimeException("좌석을 찾을 수 없습니다."));
-//        seat.setAvailable(available);
-//        seatRepository.save(seat);
-//    }
+    @Transactional
+    public void updateSeatStatus(Long seatId, boolean available) {
+        // 좌석 상태 변경
+        redisTemplate.opsForHash().put(SEAT_STATUS_KEY, seatId.toString(), available);
+
+        // DB도 업데이트
+        Seat seat = seatRepository.findById(seatId)
+                .orElseThrow(() -> new RuntimeException("좌석을 찾을 수 없습니다."));
+        seat.setAvailable(available);
+        seatRepository.save(seat);
+    }
 
 //    public SeatResponse saveSeats(){
 //

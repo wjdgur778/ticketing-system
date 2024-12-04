@@ -7,15 +7,15 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @Getter
 public class SeatResponse {
-    private long number;
+    private long seatId;
     private boolean isAvailable;
 
-    public SeatResponse(long number, boolean isAvailable) {
-        this.number = number;
+    public SeatResponse( long seatId, boolean isAvailable) {
+        this.seatId = seatId;
         this.isAvailable = isAvailable;
     }
 
     public static SeatResponse from(Seat seat) {
-        return new SeatResponse(seat.getNumber(), seat.isAvailable());
+        return new SeatResponse(seat.getId(), seat.isAvailable());
     }
 }
