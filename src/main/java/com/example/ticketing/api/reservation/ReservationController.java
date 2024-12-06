@@ -14,7 +14,6 @@ public class ReservationController {
 
     @PostMapping("")
     ResponseEntity<Result> reservation(@RequestBody ReservationRequest reservationRequest){
-        System.out.println(reservationRequest.getSeatId());
         return ResponseEntity.status(200)
                 .body(Result.builder()
                         .message("success reservation")

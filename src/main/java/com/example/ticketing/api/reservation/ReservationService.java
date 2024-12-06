@@ -2,6 +2,7 @@ package com.example.ticketing.api.reservation;
 
 import com.example.ticketing.api.contents.ContentsRepository;
 import com.example.ticketing.api.reservation.dto.ReservationResponse;
+import com.example.ticketing.api.reservation.dto.WaitingResponse;
 import com.example.ticketing.api.seat.Seat;
 import com.example.ticketing.api.seat.SeatRepository;
 import com.example.ticketing.api.ticket.Ticket;
@@ -13,6 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.util.Set;
@@ -27,8 +29,8 @@ public class ReservationService {
     //     Redis 대기열과 작업 큐에 관련된 키
     private static final String WAIT_QUEUE_KEY = "WAIT_QUEUE";
     private static final String WORKING_QUEUE_KEY = "WORKING_QUEUE";
-    private static final int MAX_WAITING_QUEUE_SIZE = 10;
-    private static final int MAX_WORKING_QUEUE_SIZE = 5;
+    private static final int MAX_WAITING_QUEUE_SIZE = 1000;
+    private static final int MAX_WORKING_QUEUE_SIZE = 30;
 
     private final RedisTemplate<String, Object> redisTemplate;
     private final SeatRepository seatRepository;
@@ -46,20 +48,20 @@ public class ReservationService {
 
         Long userId = uid;
 
-        // TTL 설정( 5분대기 )
+        // TTL 설정( 5분 유지 )
         redisTemplate.expire(WAIT_QUEUE_KEY, Duration.ofMinutes(5));
 
         // 1. 스케줄러로 인해 사용자가 작업큐에 들어갔는지 확인 후 들어갔다면, 티켓 발급
         if (redisTemplate.opsForZSet().score(WORKING_QUEUE_KEY, String.valueOf(userId)) != null) {
             log.info("스케줄러로 인해 사용자가 작업큐에 들어갔기에 예약시도");
-
             Ticket ticket = processReservation(userId, seatId);
-            return new ReservationResponse("SUCESSS", 0, 0, ticket);
+            return new ReservationResponse("SUCESSS",0 , 0, ticket);
         }
 
         // 중복 추가 방지
         if (redisTemplate.opsForZSet().score(WAIT_QUEUE_KEY, String.valueOf(userId)) != null) {
-            throw new RestApiException(ALREADY_EXIST);
+            Long rank = redisTemplate.opsForZSet().rank(WAIT_QUEUE_KEY,String.valueOf(userId));
+            return new ReservationResponse("WAITING", rank.intValue(), redisTemplate.opsForZSet().size(WAIT_QUEUE_KEY).intValue(), null);
         }
 
         // 1. 대기열에 추가 (wait 큐에 먼저 들어감)
@@ -138,16 +140,20 @@ public class ReservationService {
      * 서로 다른 사용자가 동일한 자원에 접근하여 한 좌석에 2명이 예약되는 (동시성 문제)가 발생할 수 있다.
      * redis의 분산락을 통한 예약 방식을 시도
      */
-//    @Transactional
+    @Transactional
     private Ticket processReservation(Long userId, Long seatId) {
         String lockKey = "seat_lock:" + seatId;
         String lockValue = UUID.randomUUID().toString(); // 고유 값으로 락 구분
         try {
-            // 1. 대기 큐 순서 확인
-            if (!isUserTurn(userId)) {
-                throw new RestApiException(WAITING);
+             //
+//            // 1. 작업 큐 순서 확인
+//            if (!isUserTurn(userId)) {
+//                throw new RestApiException(WAITING);
+//            }
+            // 1. 작업 큐에 해당 사용자가 존재하는지 확인
+            if (redisTemplate.opsForZSet().score(WORKING_QUEUE_KEY, String.valueOf(userId)) == null) {
+                throw new RestApiException(NOT_IN_WORKING_QUEUE);
             }
-
 
             // 2. 분산 락 획득 (TTL 3분)
             Boolean lockAcquired = redisTemplate.opsForValue().setIfAbsent(lockKey, lockValue, Duration.ofMinutes(3));
@@ -172,7 +178,6 @@ public class ReservationService {
             log.info("좌석 상태 변경");
 
             seat.setAvailable(false); // dirty check을 통해 seat에 add
-            seatRepository.save(seat);
 
             log.info("티켓발급");
             // 5. 티켓 발급

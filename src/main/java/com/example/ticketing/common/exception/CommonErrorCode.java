@@ -17,7 +17,8 @@ public enum CommonErrorCode implements ErrorCode{
     LOCKED(HttpStatus.BAD_REQUEST,"다른 사용자가 좌석을 예약 중입니다."),
     WAITING(HttpStatus.BAD_REQUEST,"현재 사용자의 차례가 아닙니다. 기다려주세요"),
     NOT_AVAILABLE(HttpStatus.BAD_REQUEST,"이미 예약된 좌석입니다."),
-    ALREADY_EXIST(HttpStatus.BAD_REQUEST,"이미 대기열에 존재합니다.")
+    ALREADY_EXIST(HttpStatus.BAD_REQUEST,"이미 대기열에 존재합니다."),
+    NOT_IN_WORKING_QUEUE(HttpStatus.BAD_REQUEST,"작업큐에 존재하지 않습니다.")
     ;
 
     private final HttpStatus status;

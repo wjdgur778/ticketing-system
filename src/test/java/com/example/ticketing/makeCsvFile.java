@@ -9,11 +9,12 @@ import java.util.Random;
 public class makeCsvFile {
     @Test
    public void abc(){
-        final int maxsize = 100;
+        final int maxsize = 3000;
         final Random random=new Random();
         System.out.println("seatId,userId");
         for (long i = 300; i <300+maxsize ; i++) {
-            System.out.println(random.nextLong(12)+700+","+i);
+            //랜덤한 200개 좌석이 포함된 3000개의 요청 데이터
+            System.out.println(random.nextLong(200)+800+","+i);
         }
    }
 }
