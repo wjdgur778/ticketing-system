@@ -1,24 +1,24 @@
 package com.example.ticketing.api.reservation;
 
-import com.example.ticketing.api.contents.Contents;
 import com.example.ticketing.api.contents.ContentsRepository;
 import com.example.ticketing.api.reservation.dto.ReservationResponse;
 import com.example.ticketing.api.seat.Seat;
 import com.example.ticketing.api.seat.SeatRepository;
 import com.example.ticketing.api.ticket.Ticket;
 import com.example.ticketing.api.ticket.TicketService;
-import com.example.ticketing.config.auth.security.CustomUserDetail;
+import com.example.ticketing.common.exception.CommonErrorCode;
+import com.example.ticketing.common.exception.RestApiException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.util.Set;
 import java.util.UUID;
+
+import static com.example.ticketing.common.exception.CommonErrorCode.*;
 
 @Service
 @RequiredArgsConstructor
@@ -28,7 +28,7 @@ public class ReservationService {
     private static final String WAIT_QUEUE_KEY = "WAIT_QUEUE";
     private static final String WORKING_QUEUE_KEY = "WORKING_QUEUE";
     private static final int MAX_WAITING_QUEUE_SIZE = 10;
-    private static final int MAX_WORKING_QUEUE_SIZE = 1;
+    private static final int MAX_WORKING_QUEUE_SIZE = 5;
 
     private final RedisTemplate<String, Object> redisTemplate;
     private final SeatRepository seatRepository;
@@ -36,7 +36,7 @@ public class ReservationService {
     private final TicketService ticketService;
 
     /**
-     *
+     * 좌석id, userid.
      */
     public ReservationResponse reserveSeat(Long seatId, Long uid) {
 
@@ -59,13 +59,13 @@ public class ReservationService {
 
         // 중복 추가 방지
         if (redisTemplate.opsForZSet().score(WAIT_QUEUE_KEY, String.valueOf(userId)) != null) {
-            throw new RuntimeException("이미 대기열에 존재합니다.");
+            throw new RestApiException(ALREADY_EXIST);
         }
 
         // 1. 대기열에 추가 (wait 큐에 먼저 들어감)
         // 보다 정밀한 동시성 처리를 위한 score 계산
         Long order = redisTemplate.opsForValue().increment("queue_order");
-        double score = System.currentTimeMillis() + (order / 1000000.0);
+        double score = System.nanoTime() + (order / 1000000.0); //동일한 score발생으로 nano초 사용
         log.info("WAIT_QUEUE에 진입 : score "+score);
         redisTemplate.opsForZSet().add(WAIT_QUEUE_KEY, String.valueOf(userId), score);
 
@@ -128,54 +128,69 @@ public class ReservationService {
         }
     }
 
+
+    private boolean isUserTurn(Long userId) {
+        Set<Object> queue = redisTemplate.opsForZSet().range(WORKING_QUEUE_KEY, 0, 0);
+        return queue != null && !queue.isEmpty() && queue.iterator().next().equals(String.valueOf(userId));
+    }
+
     /**
      * 서로 다른 사용자가 동일한 자원에 접근하여 한 좌석에 2명이 예약되는 (동시성 문제)가 발생할 수 있다.
      * redis의 분산락을 통한 예약 방식을 시도
      */
-    @Transactional
+//    @Transactional
     private Ticket processReservation(Long userId, Long seatId) {
         String lockKey = "seat_lock:" + seatId;
         String lockValue = UUID.randomUUID().toString(); // 고유 값으로 락 구분
         try {
-            // 1. 분산 락 획득 (TTL 3분)
+            // 1. 대기 큐 순서 확인
+            if (!isUserTurn(userId)) {
+                throw new RestApiException(WAITING);
+            }
+
+
+            // 2. 분산 락 획득 (TTL 3분)
             Boolean lockAcquired = redisTemplate.opsForValue().setIfAbsent(lockKey, lockValue, Duration.ofMinutes(3));
+            log.info("lock여부 : "+lockAcquired);
             if (lockAcquired == null || !lockAcquired) {
-                throw new RuntimeException("현재 좌석이 예약 처리 중입니다. 잠시 후 다시 시도해주세요.");
+                throw new RestApiException(LOCKED);
             }
             /**
              * ////////////////////
-             * 결제 관련 로직 구간
-             *
+             * 3. 결제 관련 로직 구간
              * ////////////////////
-             *
              */
-
+//            Thread.sleep(1000);
 //            Thread.sleep();
-            // 2. 좌석 예약 처리
+            // 4. 좌석 예약 처리
+            log.info("seatId : "+seatId+" 조회");
             Seat seat = seatRepository.findById(seatId)
-                    .orElseThrow(() -> new RuntimeException("좌석을 찾을 수 없습니다."));
+                    .orElseThrow(() -> new RestApiException(NOT_FOUND));
             if (!seat.isAvailable()) {
-                throw new RuntimeException("이미 예약된 좌석입니다.");
+                throw new RestApiException(NOT_AVAILABLE);
             }
             log.info("좌석 상태 변경");
+
             seat.setAvailable(false); // dirty check을 통해 seat에 add
+            seatRepository.save(seat);
 
             log.info("티켓발급");
-            // 3. 티켓 발급
+            // 5. 티켓 발급
             Ticket ticket = ticketService.createTicket(userId, seatId,seat.getContents());
 
-            // 4. 이메일 전송 (비동기 이벤트 방식)
+            // 6. 이메일 전송 (비동기 이벤트 방식)
 //            emailService.sendTicketEmail(ticket);
             log.info("작업큐 제거");
-            // 5. 작업 큐에서 제거
+            // 7. 작업 큐에서 제거
             redisTemplate.opsForZSet().remove(WORKING_QUEUE_KEY, String.valueOf(userId));
 
             return ticket;
         } finally {
-            // 6. 락 해제 (해당 사용자만 락 해제 가능하도록 값 비교)
+            // 8. 락 해제 (해당 사용자만 락 해제 가능하도록 값 비교)
             String currentLockValue = (String)redisTemplate.opsForValue().get(lockKey);
             if (lockValue.equals(currentLockValue)) {
                 redisTemplate.delete(lockKey);
+               log.info("lock 여부 : false");
             }
         }
     }

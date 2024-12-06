@@ -24,7 +24,7 @@ public class TicketService {
                 .contents(contents)
                 .build();
 
-        log.info("Ticket ticket = new Ticket(userId,seatId,uuid.toString(),contents); 지나옴");
+        log.info("Ticket ticket = new Ticket(userId,seatId,uuid.toString(),contents); 지나옴"+userId+" "+seatId+ " "+uuid+" "+contents.getId());
 
         ticketRepository.save(ticket);
         log.info("ticketRepository.save(ticket); 지나옴");
