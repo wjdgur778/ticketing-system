@@ -1,6 +1,7 @@
 package com.example.ticketing.api.reservation;
 
 import com.example.ticketing.api.contents.ContentsRepository;
+import com.example.ticketing.api.email.EmailEvent;
 import com.example.ticketing.api.reservation.dto.ReservationResponse;
 import com.example.ticketing.api.reservation.dto.WaitingResponse;
 import com.example.ticketing.api.seat.Seat;
@@ -11,6 +12,7 @@ import com.example.ticketing.common.exception.CommonErrorCode;
 import com.example.ticketing.common.exception.RestApiException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -30,12 +32,13 @@ public class ReservationService {
     private static final String WAIT_QUEUE_KEY = "WAIT_QUEUE";
     private static final String WORKING_QUEUE_KEY = "WORKING_QUEUE";
     private static final int MAX_WAITING_QUEUE_SIZE = 1000;
-    private static final int MAX_WORKING_QUEUE_SIZE = 30;
+    private static final int MAX_WORKING_QUEUE_SIZE = 200;
 
     private final RedisTemplate<String, Object> redisTemplate;
     private final SeatRepository seatRepository;
     private final ContentsRepository contentsRepository;
     private final TicketService ticketService;
+    private final ApplicationEventPublisher applicationEventPublisher;
 
     /**
      * 좌석id, userid.
@@ -166,7 +169,9 @@ public class ReservationService {
              * 3. 결제 관련 로직 구간
              * ////////////////////
              */
-//            Thread.sleep(1000);
+
+            Thread.sleep(3000);//
+
 //            Thread.sleep();
             // 4. 좌석 예약 처리
             log.info("seatId : "+seatId+" 조회");
@@ -184,12 +189,17 @@ public class ReservationService {
             Ticket ticket = ticketService.createTicket(userId, seatId,seat.getContents());
 
             // 6. 이메일 전송 (비동기 이벤트 방식)
-//            emailService.sendTicketEmail(ticket);
+            EmailEvent emailEvent = new EmailEvent(userId,ticket);
+            applicationEventPublisher.publishEvent(emailEvent);
+
             log.info("작업큐 제거");
             // 7. 작업 큐에서 제거
             redisTemplate.opsForZSet().remove(WORKING_QUEUE_KEY, String.valueOf(userId));
 
             return ticket;
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+            throw new RestApiException(NOT_AVAILABLE);
         } finally {
             // 8. 락 해제 (해당 사용자만 락 해제 가능하도록 값 비교)
             String currentLockValue = (String)redisTemplate.opsForValue().get(lockKey);
