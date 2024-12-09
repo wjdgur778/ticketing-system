@@ -133,12 +133,6 @@ public class ReservationService {
         }
     }
 
-
-    private boolean isUserTurn(Long userId) {
-        Set<Object> queue = redisTemplate.opsForZSet().range(WORKING_QUEUE_KEY, 0, 0);
-        return queue != null && !queue.isEmpty() && queue.iterator().next().equals(String.valueOf(userId));
-    }
-
     /**
      * 서로 다른 사용자가 동일한 자원에 접근하여 한 좌석에 2명이 예약되는 (동시성 문제)가 발생할 수 있다.
      * redis의 분산락을 통한 예약 방식을 시도

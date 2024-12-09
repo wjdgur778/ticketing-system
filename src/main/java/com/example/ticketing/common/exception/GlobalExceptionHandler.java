@@ -3,7 +3,6 @@ import com.example.ticketing.common.dto.Result;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
-import org.springframework.http.HttpStatus;
 
 @ControllerAdvice
 public class GlobalExceptionHandler {
