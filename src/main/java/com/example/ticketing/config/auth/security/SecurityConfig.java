@@ -49,6 +49,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/user/login").permitAll()
                         .requestMatchers("/api/user/signup").permitAll()
                         .requestMatchers("/api/reservation").permitAll()
+                        .requestMatchers("/api/contents").permitAll()
 ////                        .requestMatchers("/api/v1/user/write").hasRole("UESR")
 //                        .requestMatchers("/api/v1/user/list").authenticated()
 //                        .anyRequest().hasRole(Role.USER.name())//위에서 언급한 url 이외의 url은 모두 허용한다.

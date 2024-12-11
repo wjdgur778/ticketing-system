@@ -7,8 +7,8 @@ import org.springframework.cache.annotation.EnableCaching;
 
 @EnableCaching
 //테스트를 위한 security off
-//@SpringBootApplication(exclude = SecurityAutoConfiguration.class)
-@SpringBootApplication
+@SpringBootApplication(exclude = SecurityAutoConfiguration.class)
+//@SpringBootApplication
 public class TicketingApplication {
 
 	public static void main(String[] args) {

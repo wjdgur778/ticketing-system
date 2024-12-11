@@ -23,13 +23,4 @@ public class SeatController {
         );
     }
 
-    @PostMapping("/{contentsId}/reservation")
-    public ResponseEntity<Result> reservation(Long contentsId) {
-        return ResponseEntity.status(200).body(Result.builder()
-                        .message("success reservation")
-                        .data(null)
-//                .data(seatService.reservationSeat(contentsId))
-                        .build()
-        );
-    }
 }
