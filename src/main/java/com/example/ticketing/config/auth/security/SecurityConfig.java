@@ -48,6 +48,7 @@ public class SecurityConfig {
                         //requsetMatchers를 사용할때는 url를 정확하게 작성해야한다.
                         .requestMatchers("/api/user/login").permitAll()
                         .requestMatchers("/api/user/signup").permitAll()
+                        //test를 위한 허용
                         .requestMatchers("/api/reservation").permitAll()
                         .requestMatchers("/api/contents").permitAll()
 ////                        .requestMatchers("/api/v1/user/write").hasRole("UESR")

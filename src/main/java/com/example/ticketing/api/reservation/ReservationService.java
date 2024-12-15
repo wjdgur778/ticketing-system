@@ -32,7 +32,7 @@ public class ReservationService {
     private static final String WAIT_QUEUE_KEY = "WAIT_QUEUE";
     private static final String WORKING_QUEUE_KEY = "WORKING_QUEUE";
     private static final int MAX_WAITING_QUEUE_SIZE = 1000;
-    private static final int MAX_WORKING_QUEUE_SIZE = 200;
+    private static final int MAX_WORKING_QUEUE_SIZE = 20;
 
     private final RedisTemplate<String, Object> redisTemplate;
     private final SeatRepository seatRepository;
@@ -52,8 +52,8 @@ public class ReservationService {
         Long userId = uid;
 
         // TTL 설정( 5분 유지 )
-        redisTemplate.expire(WAIT_QUEUE_KEY, Duration.ofMinutes(5));
-
+        redisTemplate.expire(WAIT_QUEUE_KEY, Duration.ofMinutes(20));
+        redisTemplate.expire(WORKING_QUEUE_KEY, Duration.ofMinutes(10));
         // 1. 스케줄러로 인해 사용자가 작업큐에 들어갔는지 확인 후 들어갔다면, 티켓 발급
         if (redisTemplate.opsForZSet().score(WORKING_QUEUE_KEY, String.valueOf(userId)) != null) {
             log.info("스케줄러로 인해 사용자가 작업큐에 들어갔기에 예약시도");
@@ -135,7 +135,7 @@ public class ReservationService {
 
     /**
      * 서로 다른 사용자가 동일한 자원에 접근하여 한 좌석에 2명이 예약되는 (동시성 문제)가 발생할 수 있다.
-     * redis의 분산락을 통한 예약 방식을 시도
+     * redis을 통해 락을 거는 방식으로 예약 시도
      */
     @Transactional
     private Ticket processReservation(Long userId, Long seatId) {
@@ -185,6 +185,8 @@ public class ReservationService {
             // 6. 이메일 전송 (비동기 이벤트 방식)
             EmailEvent emailEvent = new EmailEvent(userId,ticket);
             applicationEventPublisher.publishEvent(emailEvent);
+//            Thread.sleep(5000);//
+
 
             log.info("작업큐 제거");
             // 7. 작업 큐에서 제거
