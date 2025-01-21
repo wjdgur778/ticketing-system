@@ -112,7 +112,7 @@ public class ReservationService {
     /**
      *
      */
-    @Scheduled(fixedRate = 8000) // 8초마다 대기열
+//    @Scheduled(fixedRate = 8000) // 8초마다 대기열
     public void processWorkingQueue() {
         // 작업 큐 크기 확인
         Long workingQueueSize = redisTemplate.opsForZSet().size(WORKING_QUEUE_KEY);
