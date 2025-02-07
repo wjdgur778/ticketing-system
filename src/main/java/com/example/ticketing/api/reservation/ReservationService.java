@@ -10,6 +10,7 @@ import com.example.ticketing.api.ticket.Ticket;
 import com.example.ticketing.api.ticket.TicketService;
 import com.example.ticketing.common.exception.CommonErrorCode;
 import com.example.ticketing.common.exception.RestApiException;
+import io.lettuce.core.api.sync.RedisCommands;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -39,6 +40,8 @@ public class ReservationService {
     private final ContentsRepository contentsRepository;
     private final TicketService ticketService;
     private final ApplicationEventPublisher applicationEventPublisher;
+    private final RedisCommands redisCommands;
+
 
     /**
      * 좌석id, userid.
@@ -48,12 +51,12 @@ public class ReservationService {
 //        //userId를 직접 파라미터로 받지 않고 securitycontext에서 얻어 사용
 //        CustomUserDetail userDetail = (CustomUserDetail) SecurityContextHolder.getContext().getAuthentication().getDetails();
 //        Long userId = userDetail.getUser().getId();
-
         Long userId = uid;
 
-        // TTL 설정( 5분 유지 )
-        redisTemplate.expire(WAIT_QUEUE_KEY, Duration.ofMinutes(20));
-        redisTemplate.expire(WORKING_QUEUE_KEY, Duration.ofMinutes(10));
+        // waiting queue와 working queue가 만들어질때만 만료시간 설정한다.
+        if(!redisTemplate.hasKey(WAIT_QUEUE_KEY)) redisTemplate.expire(WAIT_QUEUE_KEY, Duration.ofMinutes(20));
+        if(!redisTemplate.hasKey(WORKING_QUEUE_KEY)) redisTemplate.expire(WORKING_QUEUE_KEY, Duration.ofMinutes(10));
+
         // 1. 스케줄러로 인해 사용자가 작업큐에 들어갔는지 확인 후 들어갔다면, 티켓 발급
         if (redisTemplate.opsForZSet().score(WORKING_QUEUE_KEY, String.valueOf(userId)) != null) {
             log.info("스케줄러로 인해 사용자가 작업큐에 들어갔기에 예약시도");
@@ -109,10 +112,8 @@ public class ReservationService {
         return false;
     }
 
-    /**
-     *
-     */
-//    @Scheduled(fixedRate = 8000) // 8초마다 대기열
+
+    @Scheduled(fixedRate = 8000) // 8초마다 대기열
     public void processWorkingQueue() {
         // 작업 큐 크기 확인
         Long workingQueueSize = redisTemplate.opsForZSet().size(WORKING_QUEUE_KEY);
@@ -139,6 +140,7 @@ public class ReservationService {
      */
     @Transactional
     private Ticket processReservation(Long userId, Long seatId) {
+        boolean lockReleased = false;
         String lockKey = "seat_lock:" + seatId;
         String lockValue = UUID.randomUUID().toString(); // 고유 값으로 락 구분
         try {
@@ -152,7 +154,7 @@ public class ReservationService {
                 throw new RestApiException(NOT_IN_WORKING_QUEUE);
             }
 
-            // 2. 분산 락 획득 (TTL 3분)
+            // 2. 락 획득 (TTL 3분)
             Boolean lockAcquired = redisTemplate.opsForValue().setIfAbsent(lockKey, lockValue, Duration.ofMinutes(3));
             log.info("lock여부 : "+lockAcquired);
             if (lockAcquired == null || !lockAcquired) {
@@ -182,27 +184,33 @@ public class ReservationService {
             // 5. 티켓 발급
             Ticket ticket = ticketService.createTicket(userId, seatId,seat.getContents());
 
-            // 6. 이메일 전송 (비동기 이벤트 방식)
+            // 6. 락 해제
+            // 락을 즉시 해제하고 이메일을 전송
+            redisTemplate.delete(lockKey);
+            log.info("lock 해제 완료");
+
+            // 7. 이메일 전송 (비동기 이벤트 방식)
             EmailEvent emailEvent = new EmailEvent(userId,ticket);
             applicationEventPublisher.publishEvent(emailEvent);
 //            Thread.sleep(5000);//
 
 
             log.info("작업큐 제거");
-            // 7. 작업 큐에서 제거
+            // 8. 작업 큐에서 제거
             redisTemplate.opsForZSet().remove(WORKING_QUEUE_KEY, String.valueOf(userId));
 
             return ticket;
         } catch (InterruptedException e) {
-            e.printStackTrace();
-            throw new RestApiException(NOT_AVAILABLE);
-        } finally {
-            // 8. 락 해제 (해당 사용자만 락 해제 가능하도록 값 비교)
+            // 8. 장애시에 락 해제 (해당 사용자만 락 해제 가능하도록 값 비교)
             String currentLockValue = (String)redisTemplate.opsForValue().get(lockKey);
             if (lockValue.equals(currentLockValue)) {
                 redisTemplate.delete(lockKey);
-               log.info("lock 여부 : false");
+                log.info("lock 여부 : false");
             }
+            e.printStackTrace();
+            throw new RestApiException(NOT_AVAILABLE);
+        } finally {
+
         }
     }
 
