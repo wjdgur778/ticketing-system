@@ -9,7 +9,7 @@ import java.util.Random;
 public class makeCsvFile {
     @Test
    public void abc(){
-        final int maxsize = 3000;
+        final int maxsize = 500;
         final Random random=new Random();
         System.out.println("seatId,userId");
         for (long i = 300; i <300+maxsize ; i++) {
