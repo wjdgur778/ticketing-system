@@ -17,6 +17,7 @@ public class Seat {
     private long id;
     private long number;
     private boolean isAvailable;
+
     @ManyToOne
     @JoinColumn(name = "contents_id")
     private Contents contents;

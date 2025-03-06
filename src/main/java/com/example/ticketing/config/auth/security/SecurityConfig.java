@@ -50,11 +50,12 @@ public class SecurityConfig {
                         .requestMatchers("/api/user/signup").permitAll()
                         //test를 위한 허용
                         .requestMatchers("/api/reservation").permitAll()
-                        .requestMatchers("/api/contents").permitAll()
+                        .requestMatchers("/api/contents").authenticated()
 ////                        .requestMatchers("/api/v1/user/write").hasRole("UESR")
 //                        .requestMatchers("/api/v1/user/list").authenticated()
 //                        .anyRequest().hasRole(Role.USER.name())//위에서 언급한 url 이외의 url은 모두 허용한다.
-        );
+
+        ).addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
         // 기본 HTTP 인증을 활성화하여 사용자 인증을 처리하겠다는 설정
 //                        .httpBasic(Customizer.withDefaults());
@@ -64,7 +65,7 @@ public class SecurityConfig {
 
         //HTTP 요청에 JWT 토큰 인증 필터를 거치도록 필터를 추가
         //JWT 인증을 사용하는 경우, JwtFilter가 사용자 인증을 처리하므로 UsernamePasswordAuthenticationFilter를 거칠 필요가 없습니다.
-        http.addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
+//        http.addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 

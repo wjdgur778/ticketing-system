@@ -113,12 +113,12 @@ public class ReservationService {
         return false;
     }
 
-    @Scheduled(fixedRate = 5000)
+//    @Scheduled(fixedRate = 5000)
     public void removeExpiredValue() {
         redisTemplate.opsForZSet().removeRangeByScore(WAIT_QUEUE_KEY, 0, System.nanoTime());
     }
 
-    @Scheduled(fixedRate = 3000) // 1초마다 대기열
+//    @Scheduled(fixedRate = 3000) // 1초마다 대기열
     public void processWorkingQueue() {
         log.info("~~~~~~~~~~~~~~~~~~~processWorkingQueue~~~~~~~~~~~~~~~~~~");
         // 작업 큐 크기 확인
