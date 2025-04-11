@@ -35,6 +35,12 @@ public class ContentsService {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * 추가로
+     * 컨텐츠를 업데이트 하거나, 컨텐츠를 삭제할때
+     *  @CachePut , @CacheEvict 을 사용하여 캐시 데이터의 일관성을
+     *  유지시켜야한다.
+     */
 
 }
 

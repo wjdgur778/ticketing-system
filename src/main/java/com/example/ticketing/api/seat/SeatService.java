@@ -57,9 +57,7 @@ public class SeatService {
                 ))
                 .collect(Collectors.toList());
     }
-//    public void reservationSeat(){
-//
-//    }
+
     @Transactional
     public void updateSeatStatus(Long seatId, boolean available) {
         // 좌석 상태 변경

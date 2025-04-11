@@ -17,7 +17,7 @@ public class ReservationController {
         return ResponseEntity.status(200)
                 .body(Result.builder()
                         .message("success reservation")
-                        .data(reservationService.reserveSeat(reservationRequest.getSeatId(), reservationRequest.getUserId()))
+                        .data(reservationService.reserveSeat(reservationRequest))
 //                        .data(null)
                         .build()
                 );

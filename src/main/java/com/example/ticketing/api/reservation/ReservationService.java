@@ -2,6 +2,7 @@ package com.example.ticketing.api.reservation;
 
 import com.example.ticketing.api.contents.ContentsRepository;
 import com.example.ticketing.api.email.EmailEvent;
+import com.example.ticketing.api.reservation.dto.ReservationRequest;
 import com.example.ticketing.api.reservation.dto.ReservationResponse;
 import com.example.ticketing.api.seat.Seat;
 import com.example.ticketing.api.seat.SeatRepository;
@@ -35,6 +36,9 @@ public class ReservationService {
     private static final int MAX_WORKING_QUEUE_SIZE = 20;
     private static final int LOCK_TIMEOUT = 3000;
 
+    // Redis 동기화를 위한 키
+    private static final String SEAT_STATUS_KEY = "seat_status";
+
     private final RedisTemplate<String, Object> redisTemplate;
     private final SeatRepository seatRepository;
     private final ContentsRepository contentsRepository;
@@ -45,12 +49,14 @@ public class ReservationService {
     /**
      * 좌석id, userid.
      */
-    public ReservationResponse reserveSeat(Long seatId, Long uid) {
+    public ReservationResponse reserveSeat(ReservationRequest reservationRequest) {
 
-//        //userId를 직접 파라미터로 받지 않고 securitycontext에서 얻어 사용
+//        //userId를 직접 파라미터로 받지 않고 securitycontext에서 얻어 사용할 수도 있다.
 //        CustomUserDetail userDetail = (CustomUserDetail) SecurityContextHolder.getContext().getAuthentication().getDetails();
 //        Long userId = userDetail.getUser().getId();
-        Long userId = uid;
+        Long userId = reservationRequest.getUserId();
+        Long seatId = reservationRequest.getSeatId();
+        Long contentsId = reservationRequest.getContentId();
 
         // waiting queue와 working queue가 만들어질때만 만료시간 설정한다.
         if (!redisTemplate.hasKey(WAIT_QUEUE_KEY)) redisTemplate.expire(WAIT_QUEUE_KEY, Duration.ofMinutes(20));
@@ -59,14 +65,14 @@ public class ReservationService {
         // 1. 스케줄러로 인해 사용자가 작업큐에 들어갔는지 확인 후 들어갔다면, 티켓 발급
         if (redisTemplate.opsForZSet().score(WORKING_QUEUE_KEY, String.valueOf(userId)) != null) {
             log.info("스케줄러로 인해 사용자가 작업큐에 들어갔기에 예약시도");
-            Ticket ticket = processReservation(userId, seatId);
-            return new ReservationResponse("SUCESSS", 0, 0, ticket);
+            Ticket ticket = processReservation(userId, seatId,contentsId);
+            return new ReservationResponse("SUCESSS", 0, ticket);
         }
 
         // 중복 추가 방지
         if (redisTemplate.opsForZSet().score(WAIT_QUEUE_KEY, String.valueOf(userId)) != null) {
             Long rank = redisTemplate.opsForZSet().rank(WAIT_QUEUE_KEY, String.valueOf(userId));
-            return new ReservationResponse("WAITING", rank.intValue(), redisTemplate.opsForZSet().size(WAIT_QUEUE_KEY).intValue(), null);
+            return new ReservationResponse("WAITING", rank.intValue()+1, null);
         }
 
         // 1. 대기열에 추가 (wait 큐에 먼저 들어감)
@@ -78,10 +84,10 @@ public class ReservationService {
         log.info("WAIT_QUEUE에 진입 : score " + score);
         redisTemplate.opsForZSet().add(WAIT_QUEUE_KEY, String.valueOf(userId), score);
 
-        // 2. 대기열 우선순위 확인
+        // 2. 대기열 순위 확인
         Long rank = redisTemplate.opsForZSet().rank(WAIT_QUEUE_KEY, String.valueOf(userId));
         if (rank != null && (rank + 1) > MAX_WAITING_QUEUE_SIZE) { // 대기열 초과 시
-            return new ReservationResponse("WAITING", rank.intValue() + 1, redisTemplate.opsForZSet().size(WAIT_QUEUE_KEY).intValue(), null);
+            return new ReservationResponse("WAITING", rank.intValue() + 1,  null);
         }
 
         log.info("대기열 우선순위에 들어 작업큐로 이동 시도 rank : " + rank);
@@ -90,14 +96,14 @@ public class ReservationService {
         if (tryMoveToWorkingQueue(userId, score)) {
             // 작업 큐로 이동하여 예약 처리
             log.info("작업큐로 이동 성공이후 예약 시도");
-            Ticket ticket = processReservation(userId, seatId);
+            Ticket ticket = processReservation(userId, seatId,contentsId);
             log.info("작업큐로 이동 성공이후 예약 처리 완료 - ticket uuid : " + ticket.getUuid());
-            return new ReservationResponse("SUCESSS", 0, 0, ticket);
+            return new ReservationResponse("SUCESSS", 0, ticket);
         }
 
         //작업 큐에 들어가지 못한 경우
         // 대기 상태 유지 (working 큐에 들어갈 때까지 대기)
-        return new ReservationResponse("WAITING", rank.intValue(), redisTemplate.opsForZSet().size(WAIT_QUEUE_KEY).intValue(), null);
+        return new ReservationResponse("WAITING", rank.intValue(), null);
 
     }
 
@@ -145,7 +151,7 @@ public class ReservationService {
      * redis을 통해 락을 거는 방식으로 예약 시도
      */
     @Transactional
-    public Ticket processReservation(Long userId, Long seatId) {
+    public Ticket processReservation(Long userId, Long seatId, Long contentsId) {
         boolean lockReleased = false;
         String lockKey = "seat_lock:" + seatId;
         String lockValue = UUID.randomUUID().toString(); // 고유 값으로 락 구분
@@ -178,10 +184,14 @@ public class ReservationService {
             }
             log.info("좌석 상태 변경");
             seat.setAvailable(false); // dirty check을 통해 seat에 add
+            redisTemplate.opsForHash().put( SEAT_STATUS_KEY + contentsId, seatId, false); //Redis에 동기화
+
+
 
             // 5. 티켓 발급
             log.info("티켓발급");
             Ticket ticket = ticketService.createTicket(userId, seatId, seat.getContents());
+
 
             // 6. 락 해제
             // 락을 즉시 해제하고 이메일을 전송

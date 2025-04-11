@@ -10,13 +10,11 @@ public class ReservationResponse {
 
     String status;
     int rank;
-    int queueSize;
     Ticket ticket;
 
-    public ReservationResponse(String status, int rank, int queueSize, Ticket ticket) {
+    public ReservationResponse(String status, int rank,Ticket ticket) {
         this.status = status;
         this.rank = rank;
         this.ticket = ticket;
-        this.queueSize = queueSize;
     }
 }
