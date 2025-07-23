@@ -248,6 +248,15 @@ public class ReservationService {
         }
     }
 
+    /**
+     * 가장 큰 위험은 get 시점에는 내가 락을 가지고 있었는데, if 조건 검사 전에 락이 만료되어 버리고,
+     * 그 사이에 다른 사용자가 락을 획득하는 경우입니다.
+     * 이때 if 조건이 false가 되어 락 해제에 실패하고,
+     * 원래 내가 획득했던 락은 사라지고 다른 사용자가 새롭게 획득한 락을 관리하지 못하는 상태가 될 수 있다는 점이다.
+     * 이를 위해 lua 스크립트를 활용해서 get 과 delete를 하나의 작업으로 묶을 수도 있다.
+     * @param lockKey
+     * @param lockValue
+     */
     public void releaseLock(String lockKey, String lockValue) {
         String currentValue = (String) redisTemplate.opsForValue().get(lockKey);
         // 현재 락이 본인이 설정한 값과 같다면 삭제
