@@ -11,6 +11,7 @@ public class ReservationRequest {
     long seatId;
     long userId;
     ReservationRequest(long contentId, long seatId,long userId){
+        this.contentId = contentId;
         this.seatId = seatId;
         this.userId = userId;
     }

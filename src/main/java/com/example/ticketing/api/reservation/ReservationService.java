@@ -13,12 +13,14 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -109,14 +111,35 @@ public class ReservationService {
 
     private boolean tryMoveToWorkingQueue(Long userId, double score) {
         log.info("~~~~~~~~~~~~~~~~~~~tryMoveToWorkingQueue~~~~~~~~~~~~~~~~~~");
-        // 현재 대기열에서 우선순위가 되면, 작업 큐로 이동
-        Long workingQueueSize = redisTemplate.opsForZSet().size(WORKING_QUEUE_KEY);
-        if (workingQueueSize != null && workingQueueSize < MAX_WORKING_QUEUE_SIZE) {
-            redisTemplate.opsForZSet().remove(WAIT_QUEUE_KEY, String.valueOf(userId));
-            redisTemplate.opsForZSet().add(WORKING_QUEUE_KEY, String.valueOf(userId), score);
-            return true;
-        }
-        return false;
+
+        // Lua script로 현재 대기열에서 우선순위가 되면, 작업 큐로 이동
+        String script = """
+        local workingSize = redis.call('ZCARD', KEYS[1])
+        if workingSize < tonumber(ARGV[1]) then
+            redis.call('ZREM', KEYS[2], ARGV[2])
+            redis.call('ZADD', KEYS[1], ARGV[3], ARGV[2])
+            return 1
+        else
+            return 0
+        end
+        """;
+
+        DefaultRedisScript<Long> redisScript = new DefaultRedisScript<>(script, Long.class);
+        Long result = redisTemplate.execute(
+                redisScript,
+                List.of(WORKING_QUEUE_KEY, WAIT_QUEUE_KEY),
+                String.valueOf(MAX_WORKING_QUEUE_SIZE),  // ← 문자열로 변환
+                String.valueOf(userId),                  // ← 문자열로 반환
+                String.valueOf(score)                    // ← 문자열로 변환
+        );
+        return result ==1;
+//        Long workingQueueSize = redisTemplate.opsForZSet().size(WORKING_QUEUE_KEY);
+//        if (workingQueueSize != null && workingQueueSize < MAX_WORKING_QUEUE_SIZE) {
+//            redisTemplate.opsForZSet().remove(WAIT_QUEUE_KEY, String.valueOf(userId));
+//            redisTemplate.opsForZSet().add(WORKING_QUEUE_KEY, String.valueOf(userId), score);
+//            return true;
+//        }
+//        return false;
     }
 
 //    @Scheduled(fixedRate = 5000)
